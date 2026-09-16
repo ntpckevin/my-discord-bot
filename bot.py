@@ -9,8 +9,7 @@ from discord.ext import commands
 import yt_dlp
 from dotenv import load_dotenv
 
-# Keep-alive server to trick Render's port checker and handle health checks
-
+# 1. Keep-alive server class with correct, uniform 4-space indentation levels
 class DummyServer(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -21,13 +20,20 @@ class DummyServer(BaseHTTPRequestHandler):
         self.send_response(200)
         self.end_headers()
 
+# 2. THE MISSING ENGINE FUNCTION (Fills the missing definition gap)
+def run_server():
+    port = int(os.getenv("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), DummyServer)
+    server.serve_forever()
+
+# 3. Fire up the background listener pipeline thread safely
 threading.Thread(target=run_server, daemon=True).start()
 
-# ---------------------------------------------------------------------------
-# 2. INITIALIZATION & SETUP
-# ---------------------------------------------------------------------------
+# 4. Initialize Discord environment parameters
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
+# ... rest of your code continues natively down below from here ...
+
 
 intents = discord.Intents.default()
 intents.message_content = True
