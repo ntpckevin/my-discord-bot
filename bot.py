@@ -190,6 +190,11 @@ async def on_message(message):
     user_message_logs[user_id] = [t for t in user_message_logs[user_id] if current_time - t < SPAM_INTERVAL]
     user_message_logs[user_id].append(current_time)
     if len(user_message_logs[user_id]) > SPAM_THRESHOLD:
-        try:
+                try:
             duration = asyncio.datetime.timedelta(minutes=5)
             await message.author.timeout(duration, reason="Anti-Spam Protection Triggered")
+            await message.channel.purge(limit=5, check=lambda m: m.author.id == user_id)
+            await message.channel.send(f"🛡️ {message.author.mention} has been auto-timed out for 5 minutes due to **Spam Detection**.")
+            return
+                except discord.Forbidden:
+                        pass
