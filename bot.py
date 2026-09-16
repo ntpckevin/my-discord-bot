@@ -9,19 +9,17 @@ from discord.ext import commands
 import yt_dlp
 from dotenv import load_dotenv
 
-# ---------------------------------------------------------------------------
-# 1. KEEP-ALIVE SERVER (TRICKS RENDER PORT CHECKS)
-# ---------------------------------------------------------------------------
+# Keep-alive server to trick Render's port checker and handle health checks
+
 class DummyServer(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"Bot is alive!")
 
-def run_server():
-    port = int(os.getenv("PORT", 8080))
-    server = HTTPServer(("0.0.0.0", port), DummyServer)
-    server.serve_forever()
+    def do_HEAD(self):
+        self.send_response(200)
+        self.end_headers()
 
 threading.Thread(target=run_server, daemon=True).start()
 
