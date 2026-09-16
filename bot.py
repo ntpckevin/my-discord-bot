@@ -1,14 +1,17 @@
 import os
 import asyncio
 import time
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import discord
+from discord import app_commands # New system wrapper
 from discord.ext import commands
 import yt_dlp
 from dotenv import load_dotenv
-import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# Keep-alive server to trick Render's port checker
+# ---------------------------------------------------------------------------
+# KEEP-ALIVE SERVER (TRICKS RENDER FOR FREE 24/7 HOSTING)
+# ---------------------------------------------------------------------------
 class DummyServer(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -16,14 +19,15 @@ class DummyServer(BaseHTTPRequestHandler):
         self.wfile.write(b"Bot is alive!")
 
 def run_server():
-    # Render automatically inputs a PORT environment variable, fallback to 8080 locally
     port = int(os.getenv("PORT", 8080))
     server = HTTPServer(("0.0.0.0", port), DummyServer)
     server.serve_forever()
 
-# Start the web port in the background before the bot runs
 threading.Thread(target=run_server, daemon=True).start()
 
+# ---------------------------------------------------------------------------
+# INITIALIZATION & CUSTOM STATUS
+# ---------------------------------------------------------------------------
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 
@@ -35,35 +39,66 @@ intents.guilds = True
 
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
-# ---------------------------------------------------------------------------
-# INITIALIZATION & CUSTOM STATUS
-# ---------------------------------------------------------------------------
-
 @bot.event
 async def on_ready():
-    print(f'System Live: {bot.user.name} Security Layer Enabled.')
-    
-    # 1. Configures Custom Activity Text ("Watching over the server | !help")
-    custom_activity = discord.Activity(type=discord.ActivityType.watching, name="over the server | !help")
-    
-    # 2. Applies the Activity along with a custom status (discord.Status.dnd, discord.Status.idle, discord.Status.online)
+    print(f'System Live: {bot.user.name}')
+    custom_activity = discord.Activity(type=discord.ActivityType.watching, name="over the server | /help")
     await bot.change_presence(status=discord.Status.dnd, activity=custom_activity)
-    print("Bot status has been locked to: Do Not Disturb (Watching...)")
+    
+    # Pre-sync slash commands globally across all servers on startup
+    try:
+        synced = await bot.tree.sync()
+        print(f"Successfully synced {len(synced)} slash commands globally!")
+    except Exception as e:
+        print(f"Failed to sync commands: {e}")
 
-# Dynamic commands allowing you to shift presence indicators on the fly
-@bot.command(name='status_idle')
+# 🚨 THE SECRET SYNC COMMAND
+# Type '!sync' in your server once to force Discord to update your '/' menu immediately!
+@bot.command(name='sync')
 @commands.has_permissions(administrator=True)
-async def status_idle(ctx):
-    """Dynamically shifts the bot profile display state into yellow Idle indicators."""
+async def sync(ctx):
+    try:
+        synced = await bot.tree.sync()
+        await ctx.send(f"🔄 Success! Registered {len(synced)} Slash Commands. Check your `/` menu now!")
+    except Exception as e:
+        await ctx.send(f"❌ Sync failed: {e}")
+
+# ---------------------------------------------------------------------------
+# NEW MODERN SLASH COMMANDS (/)
+# ---------------------------------------------------------------------------
+
+@bot.tree.command(name="help", description="Displays the server assistant help guide.")
+async def help_slash(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="🤖 Server Assistant Multi-Tool",
+        description="Use your slash actions to interact with moderation, security, and music properties!",
+        color=discord.Color.blurple()
+    )
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="status_idle", description="Shifts the bot status indicator to Idle.")
+@app_commands.checks.has_permissions(administrator=True)
+async def status_idle_slash(interaction: discord.Interaction):
     await bot.change_presence(status=discord.Status.idle, activity=bot.activity)
-    await ctx.send("🌙 Status shifted to **Idle**.")
+    await interaction.response.send_message("🌙 Status shifted to **Idle**.")
 
-@bot.command(name='status_dnd')
-@commands.has_permissions(administrator=True)
-async def status_dnd(ctx):
-    """Dynamically shifts the bot profile display state into red Do Not Disturb indicators."""
+@bot.tree.command(name="status_dnd", description="Shifts the bot status indicator to Do Not Disturb.")
+@app_commands.checks.has_permissions(administrator=True)
+async def status_dnd_slash(interaction: discord.Interaction):
     await bot.change_presence(status=discord.Status.dnd, activity=bot.activity)
-    await ctx.send("⛔ Status shifted to **Do Not Disturb**.")
+    await interaction.response.send_message("⛔ Status shifted to **Do Not Disturb**.")
+
+@bot.tree.command(name="ban", description="Bans a user from the server.")
+@app_commands.checks.has_permissions(ban_members=True)
+async def ban_slash(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason specified"):
+    await member.ban(reason=reason)
+    await interaction.response.send_message(f"🚨 **{member.display_name}** has been banned. Reason: {reason}")
+
+@bot.tree.command(name="kick", description="Kicks a user from the server.")
+@app_commands.checks.has_permissions(kick_members=True)
+async def kick_slash(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason specified"):
+    await member.kick(reason=reason)
+    await interaction.response.send_message(f"✅ **{member.display_name}** has been kicked. Reason: {reason}")
 
 # ---------------------------------------------------------------------------
 # GLOBAL SECURITY CONFIGURATIONS (ANTI-SPAM & ANTI-NUKE)
@@ -72,7 +107,7 @@ SPAM_THRESHOLD = 5
 SPAM_INTERVAL = 3.0
 user_message_logs = {}
 
-激NUKE_THRESHOLD = 3
+NUKE_THRESHOLD = 3
 NUKE_INTERVAL = 60.0
 mod_action_logs = {}
 
@@ -101,86 +136,7 @@ async def on_message(message):
             pass
     await bot.process_commands(message)
 
-async def check_nuke_activity(guild, mod_id, action_type):
-    current_time = time.time()
-    if mod_id not in mod_action_logs:
-        mod_action_logs[mod_id] = {"channels": [], "roles": []}
-    mod_action_logs[mod_id][action_type] = [t for t in mod_action_logs[mod_id][action_type] if current_time - t < NUKE_INTERVAL]
-    mod_action_logs[mod_id][action_type].append(current_time)
-    if len(mod_action_logs[mod_id][action_type]) >= NUKE_THRESHOLD:
-        member = await guild.fetch_member(mod_id)
-        if member and guild.me.top_role > member.top_role:
-            await member.edit(roles=[], reason="Anti-Nuke Triggered")
-            log_channel = guild.system_channel or discord.utils.get(guild.text_channels, name="mod-logs")
-            if log_channel:
-                await log_channel.send(f"🚨 **ANTI-NUKE ACTIVATED:** {member.mention} has had all permissions revoked.")
-
-@bot.event
-async def on_guild_channel_delete(channel):
-    async for entry in channel.guild.audit_logs(action=discord.AuditLogAction.channel_delete, limit=1):
-        if entry.user.id != bot.user.id:
-            await check_nuke_activity(channel.guild, entry.user.id, "channels")
-
-@bot.event
-async def on_guild_role_delete(role):
-    async for entry in role.guild.audit_logs(action=discord.AuditLogAction.role_delete, limit=1):
-        if entry.user.id != bot.user.id:
-            await check_nuke_activity(role.guild, entry.user.id, "roles")
-
-# ---------------------------------------------------------------------------
-# MODERATION SUITE
-# ---------------------------------------------------------------------------
-@bot.command(name='ban')
-@commands.has_permissions(ban_members=True)
-async def ban(ctx, member: discord.Member, *, reason="No reason specified"):
-    await member.ban(reason=reason)
-    await ctx.send(f"🚨 **{member.display_name}** has been banned.")
-
-@bot.command(name='kick')
-@commands.has_permissions(kick_members=True)
-async def kick(ctx, member: discord.Member, *, reason="No reason specified"):
-    await member.kick(reason=reason)
-    await ctx.send(f"✅ **{member.display_name}** has been kicked.")
-
-# ---------------------------------------------------------------------------
-# MUSIC STREAMING SYSTEMS
-# ---------------------------------------------------------------------------
-@bot.command(name='play')
-async def play(ctx, *, search: str):
-    if not ctx.author.voice:
-        return await ctx.send("❌ You must be inside a Voice Channel.")
-    if not ctx.voice_client:
-        await ctx.author.voice.channel.connect()
-    async with ctx.typing():
-        loop = asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(search, download=False))
-        if 'entries' in data: data = data['entries'][0]
-        url = data['url']
-        player = discord.FFmpegPCMAudio(url, **FFMPEG_OPTIONS, before_options=FFMPEG_OPTIONS['before_options'])
-        if ctx.voice_client.is_playing(): ctx.voice_client.stop()
-        ctx.voice_client.play(player)
-        await ctx.send(f"🎵 Now Playing: **{data['title']}**")
-
-@bot.command(name='leave')
-async def leave(ctx):
-    if ctx.voice_client:
-        await ctx.voice_client.disconnect()
-        await ctx.send("🔌 Disconnected.")
-
-# ---------------------------------------------------------------------------
-# WELCOME & GOODBYE
-# ---------------------------------------------------------------------------
-@bot.event
-async def on_member_join(member):
-    channel = member.guild.system_channel or discord.utils.get(member.guild.text_channels, name="welcome")
-    if channel:
-        await channel.send(f"👋 Welcome {member.mention} to the server!")
-
-@bot.event
-async def on_member_remove(member):
-    channel = discord.utils.get(member.guild.text_channels, name="goodbye") or discord.utils.get(member.guild.text_channels, name="welcome")
-    if channel:
-        await channel.send(f"😢 **{member.name}** left the server.")
+# ... (Keep your old on_guild_channel_delete, on_guild_role_delete, and member join/leave events exactly the same at the bottom) ...
 
 if __name__ == '__main__':
     bot.run(TOKEN)
