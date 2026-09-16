@@ -5,6 +5,24 @@ import discord
 from discord.ext import commands
 import yt_dlp
 from dotenv import load_dotenv
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+# Keep-alive server to trick Render's port checker
+class DummyServer(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is alive!")
+
+def run_server():
+    # Render automatically inputs a PORT environment variable, fallback to 8080 locally
+    port = int(os.getenv("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), DummyServer)
+    server.serve_forever()
+
+# Start the web port in the background before the bot runs
+threading.Thread(target=run_server, daemon=True).start()
 
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
